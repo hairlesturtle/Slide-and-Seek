@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+    <title>Slide and Seek</title>
+
+    <!-- Tailwind with class-based dark mode -->
+    <script>
+      tailwind.config = { darkMode: 'class' };
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin />
+    <link
+      rel="stylesheet" as="style" onload="this.rel='stylesheet'"
+      href="https://fonts.googleapis.com/css2?display=swap&family=Inter:wght@400;500;700;900&family=Noto+Sans:wght@400;500;700;900"
+    />
+
+    <!-- Light/Dark backgrounds & text -->
+    <style>
+      html body { background: #fff; color: #000; }
+      html.dark body { background: #000 !important; color: #fff !important; }
+      /* Toast */
+      #toast {
+        position: fixed; bottom:1rem; left:50%;
+        transform:translateX(-50%);
+        background:rgba(0,0,0,0.8); color:#fff;
+        padding:.5rem 1rem; border-radius:.25rem;
+        opacity:0; transition:opacity .3s; pointer-events:none;
+      }
+      #toast.show { opacity:1; }
+      /* Thumbnails */
+      #thumbGrid img {
+        width:100%; height:auto;
+        border-radius:.5rem; border:1px solid #e2e8f0;
+        cursor:pointer;
+      }
+      /* Calendar */
+      #calendarGrid {
+        display:grid; grid-template-columns:repeat(7,1fr); gap:4px;
+      }
+      #calendarGrid button {
+        padding:.5rem; text-align:center; border-radius:.25rem;
+      }
+      html.dark #calendarGrid button {
+        background:#111; color:#fff;
+      }
+      #calendarGrid button.today { border:2px solid #3b82f6; }
+      #calendarGrid button.selected {
+        background:#3b82f6; color:#fff;
+      }
+      /* Lightbox */
+      #lightbox {
+        position:fixed; inset:0;
+        background:rgba(0,0,0,0.75);
+        display:flex; align-items:center; justify-content:center;
+        visibility:hidden; opacity:0;
+        transition:opacity .3s, visibility .3s; z-index:50;
+      }
+      #lightbox.show { visibility:visible; opacity:1; }
+      #lightbox img { max-width:90%; max-height:90%; border-radius:.5rem; }
+      /* Timestamp */
+      .thumb-wrapper { display: flex; flex-direction: column; gap: 0.25rem; }
+      .thumb-timestamp { font-size: 0.75rem; color: #6b7280; text-align: center; }
+      html.dark .thumb-timestamp { color: #9ca3af; }
+    </style>
+  </head>
+
+  <body class="flex flex-col min-h-screen font-sans">
+    <header class="flex items-center justify-between border-b px-10 py-3">
+      <div class="flex items-center gap-4">
+        <!-- Camera icon -->
+        <svg class="w-8 h-8 text-current" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <h2 class="text-xl font-bold">Slide and Seek</h2>
+      </div>
+      <button id="themeToggle" class="p-2">
+        <span id="themeIcon">🌙</span>
+      </button>
+    </header>
+
+    <div class="flex flex-1 px-6 py-5 gap-6">
+      <!-- Left Panel: Calendar & Presets -->
+      <div class="w-64">
+        <div class="flex items-center justify-between mb-2">
+          <button id="btnPrevMonth" class="p-1">←</button>
+          <div id="monthLabel" class="font-bold"></div>
+          <button id="btnNextMonth" class="p-1">→</button>
+        </div>
+        <div id="calendarGrid" class="mb-4"></div>
+        <h3 class="font-bold mb-2">Filter by Date</h3>
+        <div class="flex flex-col gap-2">
+          <!-- No bg color -->
+          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="today">Today</button>
+          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="yesterday">Yesterday</button>
+          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="last7">Last 7 Days</button>
+          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="last30">Last 30 Days</button>
+          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="thisMonth">This Month</button>
+          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="lastMonth">Last Month</button>
+          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="all">All Time</button>
+        </div>
+      </div>
+
+      <!-- Right Panel: Steps with large square buttons & thumbnails -->
+      <div class="flex-1 flex flex-col">
+        <div class="flex flex-col gap-8 mb-6">
+          <div class="flex flex-col items-stretch">
+            <h3 class="font-semibold text-lg mb-2">Step 1: Capture Screenshot</h3>
+            <button id="btnCapture"
+              class="bg-blue-600 text-white h-24 rounded-lg text-xl font-semibold w-full flex items-center justify-center">
+              Capture Screenshot
+            </button>
+          </div>
+          <div class="flex flex-col items-stretch">
+            <h3 class="font-semibold text-lg mb-2">Step 2: Paste</h3>
+            <button id="btnPaste"
+              class="bg-green-600 text-white h-24 rounded-lg text-xl font-semibold w-full flex items-center justify-center">
+              Paste
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-bold">Showing: <span id="currentFilter">All Time</span></h2>
+          <button id="btnSort" class="text-sm underline">Sort Latest ↕︎</button>
+        </div>
+
+        <div id="thumbGrid" class="grid grid-cols-4 gap-4 flex-1 overflow-auto"></div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+    <div id="lightbox"><img id="lightboxImg" src="" alt="Preview"></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
