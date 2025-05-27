@@ -1,141 +1,658 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Slide and Seek</title>
-
-    <!-- Tailwind with class-based dark mode -->
-    <script>
-      tailwind.config = { darkMode: 'class' };
-    </script>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin />
-    <link
-      rel="stylesheet" as="style" onload="this.rel='stylesheet'"
-      href="https://fonts.googleapis.com/css2?display=swap&family=Inter:wght@400;500;700;900&family=Noto+Sans:wght@400;500;700;900"
-    />
-
-    <!-- Light/Dark backgrounds & text -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
     <style>
-      html body { background: #fff; color: #000; }
-      html.dark body { background: #000 !important; color: #fff !important; }
-      /* Toast */
-      #toast {
-        position: fixed; bottom:1rem; left:50%;
-        transform:translateX(-50%);
-        background:rgba(0,0,0,0.8); color:#fff;
-        padding:.5rem 1rem; border-radius:.25rem;
-        opacity:0; transition:opacity .3s; pointer-events:none;
-      }
-      #toast.show { opacity:1; }
-      /* Thumbnails */
-      #thumbGrid img {
-        width:100%; height:auto;
-        border-radius:.5rem; border:1px solid #e2e8f0;
-        cursor:pointer;
-      }
-      /* Calendar */
-      #calendarGrid {
-        display:grid; grid-template-columns:repeat(7,1fr); gap:4px;
-      }
-      #calendarGrid button {
-        padding:.5rem; text-align:center; border-radius:.25rem;
-      }
-      html.dark #calendarGrid button {
-        background:#111; color:#fff;
-      }
-      #calendarGrid button.today { border:2px solid #3b82f6; }
-      #calendarGrid button.selected {
-        background:#3b82f6; color:#fff;
-      }
-      /* Lightbox */
-      #lightbox {
-        position:fixed; inset:0;
-        background:rgba(0,0,0,0.75);
-        display:flex; align-items:center; justify-content:center;
-        visibility:hidden; opacity:0;
-        transition:opacity .3s, visibility .3s; z-index:50;
-      }
-      #lightbox.show { visibility:visible; opacity:1; }
-      #lightbox img { max-width:90%; max-height:90%; border-radius:.5rem; }
-      /* Timestamp */
-      .thumb-wrapper { display: flex; flex-direction: column; gap: 0.25rem; }
-      .thumb-timestamp { font-size: 0.75rem; color: #6b7280; text-align: center; }
-      html.dark .thumb-timestamp { color: #9ca3af; }
+        .toast {
+            animation: slideIn 0.3s, fadeOut 0.5s 2.5s forwards;
+        }
+        @keyframes slideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; }
+        }
+        .sidebar {
+            scrollbar-width: thin;
+            scrollbar-color: #0057B8 transparent;
+        }
+        .sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .sidebar::-webkit-scrollbar-thumb {
+            background-color: #0057B8;
+            border-radius: 3px;
+        }
+        #screenshot-canvas {
+            display: none;
+        }
+        .calendar-day.selected {
+            background-color: #0057B8;
+            color: white;
+        }
+        .calendar-day.has-screenshots {
+            position: relative;
+        }
+        .calendar-day.has-screenshots::after {
+            content: '';
+            position: absolute;
+            bottom: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background-color: #0057B8;
+        }
+        .error-modal {
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+        .file-item:hover {
+            background-color: #f8fafc;
+        }
+        .file-link:hover {
+            text-decoration: underline;
+        }
     </style>
-  </head>
-
-  <body class="flex flex-col min-h-screen font-sans">
-    <header class="flex items-center justify-between border-b px-10 py-3">
-      <div class="flex items-center gap-4">
-        <!-- Camera icon -->
-        <svg class="w-8 h-8 text-current" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-          <circle cx="12" cy="13" r="4"/>
-        </svg>
-        <h2 class="text-xl font-bold">Slide and Seek</h2>
-      </div>
-      <button id="themeToggle" class="p-2">
-        <span id="themeIcon">🌙</span>
-      </button>
-    </header>
-
-    <div class="flex flex-1 px-6 py-5 gap-6">
-      <!-- Left Panel: Calendar & Presets -->
-      <div class="w-64">
-        <div class="flex items-center justify-between mb-2">
-          <button id="btnPrevMonth" class="p-1">←</button>
-          <div id="monthLabel" class="font-bold"></div>
-          <button id="btnNextMonth" class="p-1">→</button>
-        </div>
-        <div id="calendarGrid" class="mb-4"></div>
-        <h3 class="font-bold mb-2">Filter by Date</h3>
-        <div class="flex flex-col gap-2">
-          <!-- No bg color -->
-          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="today">Today</button>
-          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="yesterday">Yesterday</button>
-          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="last7">Last 7 Days</button>
-          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="last30">Last 30 Days</button>
-          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="thisMonth">This Month</button>
-          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="lastMonth">Last Month</button>
-          <button class="preset-btn px-6 py-2 rounded text-left" data-filter="all">All Time</button>
-        </div>
-      </div>
-
-      <!-- Right Panel: Steps with large square buttons & thumbnails -->
-      <div class="flex-1 flex flex-col">
-        <div class="flex flex-col gap-8 mb-6">
-          <div class="flex flex-col items-stretch">
-            <h3 class="font-semibold text-lg mb-2">Step 1: Capture Screenshot</h3>
-            <button id="btnCapture"
-              class="bg-blue-600 text-white h-24 rounded-lg text-xl font-semibold w-full flex items-center justify-center">
-              Capture Screenshot
-            </button>
-          </div>
-          <div class="flex flex-col items-stretch">
-            <h3 class="font-semibold text-lg mb-2">Step 2: Paste</h3>
-            <button id="btnPaste"
-              class="bg-green-600 text-white h-24 rounded-lg text-xl font-semibold w-full flex items-center justify-center">
-              Paste
-            </button>
-          </div>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+    <canvas id="screenshot-canvas"></canvas>
+    
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="w-64 bg-white border-r border-gray-200 flex flex-col sidebar">
+            <div class="p-4 border-b border-gray-200">
+                <h1 class="text-xl font-bold text-blue-800 flex items-center">
+                    <i class="fas fa-images mr-2"></i>Slide and Seek
+                </h1>
+                <div class="mt-4 relative">
+                    <input type="text" placeholder="Search notes..." 
+                           class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-800">
+                    <i class="fas fa-search absolute right-3 top-2.5 text-gray-400"></i>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-2">
+                <div class="flex justify-between items-center mb-2 px-2">
+                    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Calendar</h2>
+                    <button id="toggle-calendar" class="text-xs text-blue-800 hover:underline">View List</button>
+                </div>
+                
+                <!-- Calendar View -->
+                <div id="calendar-view" class="mb-4">
+                    <div class="flex justify-between items-center px-2 mb-2">
+                        <button id="prev-month" class="text-gray-500 hover:text-blue-800">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <h3 id="current-month" class="text-sm font-medium">May 2025</h3>
+                        <button id="next-month" class="text-gray-500 hover:text-blue-800">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div id="calendar" class="grid grid-cols-7 gap-1 px-2 text-xs">
+                        <!-- Calendar days will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- List View -->
+                <div id="list-view" class="hidden">
+                    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider px-2 mb-2">Dates</h2>
+                    <div id="date-list" class="space-y-1">
+                        <!-- Dates will be populated here -->
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="flex items-center justify-between mb-2">
-          <h2 class="font-bold">Showing: <span id="currentFilter">All Time</span></h2>
-          <button id="btnSort" class="text-sm underline">Sort Latest ↕︎</button>
-        </div>
+        <!-- Main Content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+                <h2 id="current-date" class="text-lg font-bold">Today, <span id="today-date">May 23, 2025</span></h2>
+                <div class="flex space-x-3">
+                    <button id="capture-btn" class="bg-blue-800 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg flex items-center transition-colors"
+                            aria-label="Capture screenshot with Snipping Tool">
+                        <i class="fas fa-camera mr-2"></i> Capture
+                    </button>
+                </div>
+            </header>
 
-        <div id="thumbGrid" class="grid grid-cols-4 gap-4 flex-1 overflow-auto"></div>
-      </div>
+            <!-- Main Panel -->
+            <main class="flex-1 overflow-auto p-6 bg-gray-50">
+                <div id="empty-state" class="flex flex-col items-center justify-center h-full text-center py-12">
+                    <div class="w-48 h-48 mb-6 text-gray-300">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M4 16L8 12L12 16L16 12L20 16M4 8L8 4L12 8L16 4L20 8M4 20V16M20 20V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-medium mb-2">No slides yet</h3>
+                    <p class="text-gray-500 max-w-md">Click "Capture" to take a new screenshot.</p>
+                </div>
+
+                <div id="file-list" class="hidden">
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="file-list-body" class="bg-white divide-y divide-gray-200">
+                                <!-- File items will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
     </div>
 
-    <div id="toast"></div>
-    <div id="lightbox"><img id="lightboxImg" src="" alt="Preview"></div>
+    <!-- Note Modal -->
+    <div id="note-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">Add Note</h3>
+                <button id="close-note-modal" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <textarea id="note-content" class="w-full h-32 p-3 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-800" placeholder="Add a note about this slide..."></textarea>
+            <div class="mt-4 flex justify-end space-x-3">
+                <button id="cancel-note" class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">
+                    Cancel
+                </button>
+                <button id="save-note" class="px-4 py-2 text-sm font-medium text-white bg-blue-800 hover:bg-blue-700 rounded-lg">
+                    Save Note
+                </button>
+            </div>
+        </div>
+    </div>
 
-    <script type="module" src="app.js"></script>
-  </body>
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center toast hidden">
+        <i class="fas fa-check-circle mr-2"></i>
+        <span>Slide saved successfully!</span>
+    </div>
+
+    <!-- Error Modal -->
+    <div id="error-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden error-modal">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-red-500">
+                    <i class="fas fa-exclamation-triangle mr-2"></i> Capture Tool Not Available
+                </h3>
+                <button id="close-error-modal" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <p class="mb-4">Your browser doesn't support direct access to the Snipping Tool. Please use the Windows Snipping Tool manually:</p>
+            <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                <ol class="list-decimal list-inside space-y-2">
+                    <li>Press <kbd class="bg-gray-200 px-2 py-1 rounded">Win + Shift + S</kbd></li>
+                    <li>Select the area you want to capture</li>
+                    <li>Save the image and upload it</li>
+                </ol>
+            </div>
+            <div class="flex justify-end">
+                <button id="close-error-modal-2" class="px-4 py-2 text-sm font-medium text-white bg-blue-800 hover:bg-blue-700 rounded-lg">
+                    Got it
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize the app when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // UI Elements
+            const captureBtn = document.getElementById('capture-btn');
+            const fileList = document.getElementById('file-list');
+            const fileListBody = document.getElementById('file-list-body');
+            const emptyState = document.getElementById('empty-state');
+            const dateList = document.getElementById('date-list');
+            const todayDate = document.getElementById('today-date');
+            const noteModal = document.getElementById('note-modal');
+            const noteContent = document.getElementById('note-content');
+            const saveNoteBtn = document.getElementById('save-note');
+            const cancelNoteBtn = document.getElementById('cancel-note');
+            const closeNoteModal = document.getElementById('close-note-modal');
+            const toast = document.getElementById('toast');
+            const errorModal = document.getElementById('error-modal');
+            const closeErrorModal = document.getElementById('close-error-modal');
+            const closeErrorModal2 = document.getElementById('close-error-modal-2');
+            const canvas = document.getElementById('screenshot-canvas');
+            const ctx = canvas.getContext('2d');
+            const toggleCalendarBtn = document.getElementById('toggle-calendar');
+            const calendarView = document.getElementById('calendar-view');
+            const listView = document.getElementById('list-view');
+            const prevMonthBtn = document.getElementById('prev-month');
+            const nextMonthBtn = document.getElementById('next-month');
+            const currentMonthLabel = document.getElementById('current-month');
+            const calendar = document.getElementById('calendar');
+
+            // Calendar variables
+            let currentMonth = new Date().getMonth();
+            let currentYear = new Date().getFullYear();
+            let currentSelectedDate = formatDate(new Date());
+            let viewMode = 'calendar'; // 'calendar' or 'list'
+            let currentScreenshotIndex = -1;
+            let lastCapturedImage = null;
+
+            // Set today's date
+            const today = new Date();
+            const formattedToday = formatDate(today);
+            todayDate.textContent = formattedToday;
+
+            // Initialize with today's date selected
+            updateCalendar();
+            updateDateList();
+            loadScreenshotsForDate(currentSelectedDate);
+
+            // Calendar functions
+            function updateCalendar() {
+                // Clear previous calendar
+                calendar.innerHTML = '';
+                
+                // Set month label
+                currentMonthLabel.textContent = new Date(currentYear, currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                
+                // Get first day of month and total days
+                const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+                const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+                
+                // Get screenshots data
+                const screenshots = JSON.parse(localStorage.getItem('screenshots') || '{}');
+                
+                // Add day labels
+                const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                dayLabels.forEach(label => {
+                    const dayLabel = document.createElement('div');
+                    dayLabel.className = 'text-center text-xs text-gray-500 font-medium';
+                    dayLabel.textContent = label;
+                    calendar.appendChild(dayLabel);
+                });
+                
+                // Add empty cells for days before first day of month
+                for (let i = 0; i < firstDay; i++) {
+                    const emptyCell = document.createElement('div');
+                    emptyCell.className = 'h-8';
+                    calendar.appendChild(emptyCell);
+                }
+                
+                // Add days of month
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(currentYear, currentMonth, day);
+                    const formattedDate = formatDate(date);
+                    const hasScreenshots = screenshots[formattedDate] && screenshots[formattedDate].length > 0;
+                    const isSelected = formattedDate === currentSelectedDate;
+                    const isToday = formattedDate === formattedToday;
+                    
+                    const dayElement = document.createElement('div');
+                    dayElement.className = `calendar-day text-center text-sm p-1 rounded-full cursor-pointer ${isToday ? 'border border-blue-800' : ''} ${isSelected ? 'selected' : ''} ${hasScreenshots ? 'has-screenshots' : ''}`;
+                    dayElement.textContent = day;
+                    
+                    if (isSelected) {
+                        dayElement.classList.add('selected');
+                    }
+                    
+                    dayElement.addEventListener('click', () => {
+                        currentSelectedDate = formattedDate;
+                        document.getElementById('current-date').textContent = formattedDate === formattedToday ? 'Today' : formattedDate;
+                        loadScreenshotsForDate(formattedDate);
+                        updateCalendar();
+                    });
+                    
+                    calendar.appendChild(dayElement);
+                }
+            }
+            
+            // Toggle between calendar and list view
+            toggleCalendarBtn.addEventListener('click', function() {
+                if (viewMode === 'calendar') {
+                    viewMode = 'list';
+                    calendarView.classList.add('hidden');
+                    listView.classList.remove('hidden');
+                    toggleCalendarBtn.textContent = 'View Calendar';
+                } else {
+                    viewMode = 'calendar';
+                    calendarView.classList.remove('hidden');
+                    listView.classList.add('hidden');
+                    toggleCalendarBtn.textContent = 'View List';
+                }
+            });
+            
+            // Navigate months
+            prevMonthBtn.addEventListener('click', function() {
+                currentMonth--;
+                if (currentMonth < 0) {
+                    currentMonth = 11;
+                    currentYear--;
+                }
+                updateCalendar();
+            });
+            
+            nextMonthBtn.addEventListener('click', function() {
+                currentMonth++;
+                if (currentMonth > 11) {
+                    currentMonth = 0;
+                    currentYear++;
+                }
+                updateCalendar();
+            });
+
+            // Capture button click handler
+            captureBtn.addEventListener('click', function() {
+                try {
+                    // Try to open the Windows Snipping Tool
+                    window.location.href = "ms-screenclip:";
+                    
+                    // Set up paste event listener for when user captures
+                    document.addEventListener('paste', handlePaste);
+                } catch (e) {
+                    // Fallback if protocol is not supported
+                    showErrorModal();
+                }
+            });
+            
+            // Handle paste event for screenshot
+            function handlePaste(e) {
+                // Check if this is a clipboard event with image data
+                if (e.clipboardData && e.clipboardData.items) {
+                    const items = e.clipboardData.items;
+                    
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].type.indexOf('image') !== -1) {
+                            const blob = items[i].getAsFile();
+                            const reader = new FileReader();
+                            
+                            reader.onload = function(event) {
+                                const img = new Image();
+                                img.onload = function() {
+                                    // Store the last captured image for potential paste
+                                    lastCapturedImage = event.target.result;
+                                    // Create file entry
+                                    createFileEntry(img, blob);
+                                };
+                                img.src = event.target.result;
+                            };
+                            reader.readAsDataURL(blob);
+                            break;
+                        }
+                    }
+                }
+                
+                // Remove the event listener after first paste
+                document.removeEventListener('paste', handlePaste);
+            }
+
+            // Create file entry from image
+            function createFileEntry(img, blob) {
+                // Set canvas dimensions
+                const maxWidth = 800;
+                const maxHeight = 600;
+                let width = img.width;
+                let height = img.height;
+                
+                // Calculate thumbnail dimensions
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height *= maxWidth / width;
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width *= maxHeight / height;
+                        height = maxHeight;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                // Draw image to canvas
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Create screenshot object
+                const timestamp = new Date();
+                const screenshot = {
+                    filename: formatTimestamp(timestamp) + '.jpg',
+                    date: formatDate(timestamp),
+                    timestamp: timestamp.toISOString(),
+                    note: '',
+                    fullImage: URL.createObjectURL(blob)
+                };
+                
+                // Save the screenshot
+                saveScreenshot(screenshot);
+                showToast();
+            }
+
+            // Save screenshot to "storage"
+            function saveScreenshot(screenshot) {
+                // In a real app, this would save to the file system
+                // For this demo, we'll use localStorage
+                let screenshots = JSON.parse(localStorage.getItem('screenshots') || '{}');
+                const dateKey = formatDate(new Date(screenshot.timestamp));
+                
+                if (!screenshots[dateKey]) {
+                    screenshots[dateKey] = [];
+                }
+                
+                screenshots[dateKey].unshift(screenshot); // Add to beginning of array
+                localStorage.setItem('screenshots', JSON.stringify(screenshots));
+                
+                // Update UI
+                loadScreenshotsForDate(currentSelectedDate);
+                updateDateList();
+                updateCalendar();
+            }
+
+            // Load screenshots for a specific date
+            function loadScreenshotsForDate(date) {
+                const screenshots = JSON.parse(localStorage.getItem('screenshots') || '{}');
+                const dateScreenshots = screenshots[date] || [];
+                
+                if (dateScreenshots.length > 0) {
+                    emptyState.classList.add('hidden');
+                    fileList.classList.remove('hidden');
+                    
+                    fileListBody.innerHTML = '';
+                    dateScreenshots.forEach((screenshot, index) => {
+                        const fileItem = createFileItemElement(screenshot, index);
+                        fileListBody.appendChild(fileItem);
+                    });
+                } else {
+                    emptyState.classList.remove('hidden');
+                    fileList.classList.add('hidden');
+                }
+            }
+
+            // Create file item element
+            function createFileItemElement(screenshot, index) {
+                const fileItem = document.createElement('tr');
+                fileItem.className = 'file-item';
+                
+                fileItem.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <a href="${screenshot.fullImage}" target="_blank" class="text-blue-600 hover:text-blue-800 file-link">
+                            ${screenshot.filename}
+                        </a>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${new Date(screenshot.timestamp).toLocaleString()}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${screenshot.note || '<em class="text-gray-400">No note added</em>'}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button class="edit-note-btn text-blue-600 hover:text-blue-900 mr-3">
+                            <i class="fas fa-edit mr-1"></i> Edit Note
+                        </button>
+                    </td>
+                `;
+                
+                // Add click handler for note edit
+                const editNoteBtn = fileItem.querySelector('.edit-note-btn');
+                editNoteBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    openNoteModal(screenshot, index);
+                });
+                
+                return fileItem;
+            }
+
+            // Update the date list in sidebar
+            function updateDateList() {
+                const screenshots = JSON.parse(localStorage.getItem('screenshots') || '{}');
+                const dates = Object.keys(screenshots).sort((a, b) => new Date(b) - new Date(a));
+                
+                dateList.innerHTML = '';
+                
+                dates.forEach(date => {
+                    const dateItem = document.createElement('div');
+                    dateItem.className = `px-3 py-2 rounded-lg cursor-pointer flex justify-between items-center ${date === currentSelectedDate ? 'bg-blue-100 text-blue-800' : 'hover:bg-gray-100'}`;
+                    dateItem.innerHTML = `
+                        <span>${date}</span>
+                        <span class="text-xs bg-blue-800 text-white rounded-full px-2 py-0.5">${screenshots[date].length}</span>
+                    `;
+                    
+                    dateItem.addEventListener('click', () => {
+                        currentSelectedDate = date;
+                        document.getElementById('current-date').textContent = date === formatDate(today) ? 'Today' : date;
+                        loadScreenshotsForDate(date);
+                        updateDateList();
+                        updateCalendar();
+                    });
+                    
+                    dateList.appendChild(dateItem);
+                });
+            }
+
+            // Note modal functions
+            function openNoteModal(screenshot, index) {
+                noteContent.value = screenshot.note || '';
+                currentScreenshotIndex = index;
+                noteModal.classList.remove('hidden');
+            }
+            
+            function closeNoteModalFunc() {
+                noteModal.classList.add('hidden');
+                currentScreenshotIndex = -1;
+            }
+            
+            function saveNote() {
+                const note = noteContent.value.trim();
+                if (currentScreenshotIndex >= 0) {
+                    const screenshots = JSON.parse(localStorage.getItem('screenshots') || '{}');
+                    const dateScreenshots = screenshots[currentSelectedDate] || [];
+                    
+                    if (dateScreenshots[currentScreenshotIndex]) {
+                        dateScreenshots[currentScreenshotIndex].note = note;
+                        localStorage.setItem('screenshots', JSON.stringify(screenshots));
+                        loadScreenshotsForDate(currentSelectedDate);
+                    }
+                }
+                closeNoteModalFunc();
+            }
+            
+            // Event listeners for note modal
+            saveNoteBtn.addEventListener('click', saveNote);
+            cancelNoteBtn.addEventListener('click', closeNoteModalFunc);
+            closeNoteModal.addEventListener('click', closeNoteModalFunc);
+            
+            // Error modal
+            function showErrorModal() {
+                errorModal.classList.remove('hidden');
+            }
+            
+            function closeErrorModalFunc() {
+                errorModal.classList.add('hidden');
+            }
+            
+            closeErrorModal.addEventListener('click', closeErrorModalFunc);
+            closeErrorModal2.addEventListener('click', closeErrorModalFunc);
+            
+            // Show toast notification
+            function showToast() {
+                toast.classList.remove('hidden');
+                setTimeout(() => {
+                    toast.classList.add('hidden');
+                }, 3000);
+            }
+            
+            // Helper functions
+            function formatDate(date) {
+                const d = new Date(date);
+                return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            }
+            
+            function formatTimestamp(date) {
+                const d = new Date(date);
+                const pad = num => num.toString().padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+            }
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                // C - Capture
+                if (e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    e.preventDefault();
+                    captureBtn.click();
+                }
+                
+                // Up/Down - Navigate dates
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    const dates = document.querySelectorAll('#date-list > div');
+                    if (dates.length === 0) return;
+                    
+                    let currentIndex = -1;
+                    dates.forEach((date, index) => {
+                        if (date.classList.contains('bg-blue-100')) {
+                            currentIndex = index;
+                        }
+                    });
+                    
+                    if (currentIndex >= 0) {
+                        let newIndex;
+                        if (e.key === 'ArrowUp' && currentIndex > 0) {
+                            newIndex = currentIndex - 1;
+                        } else if (e.key === 'ArrowDown' && currentIndex < dates.length - 1) {
+                            newIndex = currentIndex + 1;
+                        }
+                        
+                        if (newIndex !== undefined) {
+                            dates[newIndex].click();
+                        }
+                    }
+                }
+                
+                // Escape - Close modals
+                if (e.key === 'Escape') {
+                    if (!noteModal.classList.contains('hidden')) {
+                        closeNoteModalFunc();
+                    } else if (!errorModal.classList.contains('hidden')) {
+                        closeErrorModalFunc();
+                    }
+                }
+            });
+            
+            // Check if on Windows (for demo purposes)
+            if (!navigator.userAgent.includes('Windows')) {
+                const warning = document.createElement('div');
+                warning.className = 'fixed bottom-4 left-4 bg-yellow-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center';
+                warning.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i> For best experience, use on Windows with Chrome/Edge';
+                document.body.appendChild(warning);
+                setTimeout(() => warning.remove(), 5000);
+            }
+        });
+    </script>
+</body>
 </html>
